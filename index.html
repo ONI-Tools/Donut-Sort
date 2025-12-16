@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Donut Sort Tool</title>
+  <style>
+    :root {
+      --bg: #f5f5f5;
+      --ring-label: #333;
+      --item-stroke: #333;
+      --item-fill: #4f8bd6;
+    }
+
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      min-height: 100vh;
+    }
+
+    header {
+      padding: 16px 24px 8px;
+      text-align: center;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 1.4rem;
+    }
+
+    .subtitle {
+      font-size: 0.9rem;
+      color: #555;
+      margin-top: 4px;
+      max-width: 700px;
+    }
+
+    .controls {
+      margin: 8px 0 12px;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    button {
+      padding: 8px 14px;
+      border-radius: 999px;
+      border: none;
+      font-size: 0.9rem;
+      cursor: pointer;
+      background: #111827;
+      color: white;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.15);
+    }
+
+    button:hover {
+      filter: brightness(1.1);
+    }
+
+    .hint {
+      font-size: 0.8rem;
+      color: #666;
+      max-width: 650px;
+      text-align: center;
+    }
+
+    .canvas-wrapper {
+      background: white;
+      border-radius: 20px;
+      padding: 12px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+      margin-bottom: 20px;
+    }
+
+    svg {
+      border-radius: 16px;
+      background: #fafafa;
+    }
+
+    .ring {
+      fill: none;
+      stroke-width: 4;
+    }
+
+    .ring-inner {
+      stroke: #16a34a; /* green, solid */
+    }
+
+    .ring-middle {
+      stroke: #ea580c; /* orange, dotted */
+      stroke-dasharray: 4 6;
+    }
+
+    .ring-outer {
+      stroke: #dc2626; /* red, solid */
+    }
+
+    .ring-label {
+      fill: var(--ring-label);
+      font-size: 1rem;
+      font-weight: 600;
+    }
+
+    .item-circle {
+      fill: var(--item-fill);
+      fill-opacity: 0.35;
+      stroke: var(--item-stroke);
+      stroke-width: 1.5;
+      cursor: grab;
+    }
+
+    .item-circle:active {
+      cursor: grabbing;
+    }
+
+    .item-label {
+      fill: #111827;
+      font-size: 0.65rem;
+      text-anchor: middle;
+      dominant-baseline: middle;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Donut Sort</h1>
+    <div class="subtitle">
+      Drag items to the area that best describes your responsibility. Some tasks may fit best overlapping different areas.
+    </div>
+  </header>
+
+  <div class="controls">
+    <button id="addItemBtn">+ Add Item</button>
+    <button id="resetBtn">Reset Board</button>
+    <span class="hint">
+      Click “Add Item” to create a new circle, give it a short label, then drag it into the donut.
+      Double-click an item to rename it. Press DELETE to remove it.
+    </span>
+  </div>
+
+  <div class="canvas-wrapper">
+    <svg id="donutCanvas" width="800" height="600" viewBox="0 0 800 600">
+      <defs>
+        <!-- Curved label arcs slightly outside each ring -->
+        <path id="outerArc"  d="M 148 300 A 252 252 0 0 1 652 300" fill="none" />
+        <path id="middleArc" d="M 218 300 A 182 182 0 0 1 582 300" fill="none" />
+        <path id="innerArc"  d="M 288 300 A 112 112 0 0 1 512 300" fill="none" />
+      </defs>
+
+      <!-- Colored Rings -->
+      <circle class="ring ring-outer"  cx="400" cy="300" r="240"></circle>
+      <circle class="ring ring-middle" cx="400" cy="300" r="170"></circle>
+      <circle class="ring ring-inner"  cx="400" cy="300" r="100"></circle>
+
+      <!-- Curved Labels -->
+      <text class="ring-label">
+        <textPath href="#innerArc" startOffset="50%" text-anchor="middle">
+          Core Responsibility
+        </textPath>
+      </text>
+
+      <text class="ring-label">
+        <textPath href="#middleArc" startOffset="50%" text-anchor="middle">
+          Use Creativity &amp; Judgment
+        </textPath>
+      </text>
+
+      <text class="ring-label">
+        <textPath href="#outerArc" startOffset="50%" text-anchor="middle">
+          Not My Responsibility
+        </textPath>
+      </text>
+    </svg>
+  </div>
+
+  <script>
+    (function () {
+      var svg = document.getElementById("donutCanvas");
+      var addItemBtn = document.getElementById("addItemBtn");
+      var resetBtn = document.getElementById("resetBtn");
+
+      var nextItemIndex = 1;
+      var dragTarget = null;
+      var selectedItem = null;
+      var dragOffset = { x: 0, y: 0 };
+
+      // Safely convert mouse position to SVG coordinates
+      function getSVGPoint(evt) {
+        var point = svg.createSVGPoint();
+        point.x = evt.clientX;
+        point.y = evt.clientY;
+        var ctm = svg.getScreenCTM();
+        if (!ctm) {
+          return { x: point.x, y: point.y };
+        }
+        var inv = ctm.inverse();
+        var result = point.matrixTransform(inv);
+        return { x: result.x, y: result.y };
+      }
+
+      function getGroupPosition(g) {
+        var baseVal = g.transform.baseVal;
+        if (baseVal && baseVal.numberOfItems > 0) {
+          var m = baseVal.consolidate().matrix;
+          return { x: m.e, y: m.f };
+        }
+        return { x: 0, y: 0 };
+      }
+
+      function setGroupPosition(g, x, y) {
+        g.setAttribute("transform", "translate(" + x + "," + y + ")");
+      }
+
+      // Fallback for finding parent <g> without using .closest
+      function findDraggableGroup(target) {
+        while (target && target !== svg) {
+          if (
+            target.tagName &&
+            target.tagName.toLowerCase() === "g" &&
+            target.classList &&
+            target.classList.contains("draggable-item")
+          ) {
+            return target;
+          }
+          target = target.parentNode;
+        }
+        return null;
+      }
+
+      function startDrag(evt) {
+        var targetGroup = findDraggableGroup(evt.target);
+        if (!targetGroup) return;
+
+        evt.preventDefault();
+
+        dragTarget = targetGroup;
+        selectedItem = targetGroup;
+        svg.appendChild(dragTarget); // bring to front
+
+        var mousePoint = getSVGPoint(evt);
+        var currentPos = getGroupPosition(dragTarget);
+
+        dragOffset.x = mousePoint.x - currentPos.x;
+        dragOffset.y = mousePoint.y - currentPos.y;
+      }
+
+      function drag(evt) {
+        if (!dragTarget) return;
+
+        evt.preventDefault();
+        var mousePoint = getSVGPoint(evt);
+
+        var newX = mousePoint.x - dragOffset.x;
+        var newY = mousePoint.y - dragOffset.y;
+
+        setGroupPosition(dragTarget, newX, newY);
+      }
+
+      function endDrag() {
+        dragTarget = null;
+      }
+
+      function createItem(label) {
+        var itemGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
+        itemGroup.setAttribute("class", "draggable-item");
+
+        var circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+        circle.setAttribute("class", "item-circle");
+        circle.setAttribute("r", "45");
+        circle.setAttribute("cx", "0");
+        circle.setAttribute("cy", "0");
+
+        var text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        text.setAttribute("class", "item-label");
+        text.setAttribute("x", "0");
+        text.setAttribute("y", "0");
+
+        var finalLabel;
+        if (label && label.trim && label.trim().length > 0) {
+          finalLabel = label.trim();
+        } else {
+          finalLabel = "Item " + nextItemIndex;
+        }
+        text.textContent = finalLabel;
+
+        itemGroup.appendChild(circle);
+        itemGroup.appendChild(text);
+
+        var baseX = 120;
+        var baseY = 80;
+        var offsetY = (nextItemIndex - 1) * 70;
+        setGroupPosition(itemGroup, baseX, baseY + offsetY);
+
+        // Double-click to rename
+        itemGroup.addEventListener("dblclick", function () {
+          var currentText = text.textContent;
+          var newLabel = window.prompt("Update label:", currentText);
+          if (newLabel && newLabel.trim().length > 0) {
+            text.textContent = newLabel.trim();
+          }
+        });
+
+        svg.appendChild(itemGroup);
+        nextItemIndex++;
+      }
+
+      if (addItemBtn) {
+        addItemBtn.addEventListener("click", function () {
+          var label = window.prompt("Label for this item (optional):", "");
+          createItem(label);
+        });
+      }
+
+      if (resetBtn) {
+        resetBtn.addEventListener("click", function () {
+          var items = svg.querySelectorAll("g.draggable-item");
+          for (var i = 0; i < items.length; i++) {
+            items[i].parentNode.removeChild(items[i]);
+          }
+          nextItemIndex = 1;
+          dragTarget = null;
+          selectedItem = null;
+        });
+      }
+
+      svg.addEventListener("mousedown", startDrag);
+      svg.addEventListener("mousemove", drag);
+      window.addEventListener("mouseup", endDrag);
+
+      window.addEventListener("keydown", function (evt) {
+        if (!selectedItem) return;
+        if (evt.key === "Delete" || evt.key === "Backspace") {
+          if (selectedItem.parentNode) {
+            selectedItem.parentNode.removeChild(selectedItem);
+          }
+          selectedItem = null;
+          dragTarget = null;
+        }
+      });
+    })();
+  </script>
+</body>
+</html>
