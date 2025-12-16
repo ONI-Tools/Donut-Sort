@@ -81,6 +81,7 @@
     svg {
       border-radius: 16px;
       background: #fafafa;
+      touch-action: none; /* helps dragging on touch devices */
     }
 
     .ring {
@@ -138,10 +139,11 @@
 
   <div class="controls">
     <button id="addItemBtn">+ Add Item</button>
+    <button id="renameItemBtn">Rename Selected</button>
     <button id="resetBtn">Reset Board</button>
     <span class="hint">
       Click “Add Item” to create a new circle, give it a short label, then drag it into the donut.
-      Double-click an item to rename it. Press DELETE to remove it.
+      Click or tap a circle to select it. Use “Rename Selected” or double-click (desktop) to rename. Press DELETE to remove it.
     </span>
   </div>
 
@@ -185,13 +187,13 @@
       var svg = document.getElementById("donutCanvas");
       var addItemBtn = document.getElementById("addItemBtn");
       var resetBtn = document.getElementById("resetBtn");
+      var renameItemBtn = document.getElementById("renameItemBtn");
 
       var nextItemIndex = 1;
       var dragTarget = null;
       var selectedItem = null;
       var dragOffset = { x: 0, y: 0 };
 
-      // Safely convert mouse position to SVG coordinates
       function getSVGPoint(evt) {
         var point = svg.createSVGPoint();
         point.x = evt.clientX;
@@ -218,7 +220,6 @@
         g.setAttribute("transform", "translate(" + x + "," + y + ")");
       }
 
-      // Fallback for finding parent <g> without using .closest
       function findDraggableGroup(target) {
         while (target && target !== svg) {
           if (
@@ -267,6 +268,24 @@
         dragTarget = null;
       }
 
+      function renameGroup(group) {
+        if (!group) return;
+        var textNode = null;
+        var children = group.childNodes;
+        for (var i = 0; i < children.length; i++) {
+          if (children[i].tagName && children[i].tagName.toLowerCase() === "text") {
+            textNode = children[i];
+            break;
+          }
+        }
+        if (!textNode) return;
+        var currentText = textNode.textContent || "";
+        var newLabel = window.prompt("Update label:", currentText);
+        if (newLabel && newLabel.trim().length > 0) {
+          textNode.textContent = newLabel.trim();
+        }
+      }
+
       function createItem(label) {
         var itemGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
         itemGroup.setAttribute("class", "draggable-item");
@@ -298,13 +317,15 @@
         var offsetY = (nextItemIndex - 1) * 70;
         setGroupPosition(itemGroup, baseX, baseY + offsetY);
 
-        // Double-click to rename
+        // Double-click to rename (desktop)
         itemGroup.addEventListener("dblclick", function () {
-          var currentText = text.textContent;
-          var newLabel = window.prompt("Update label:", currentText);
-          if (newLabel && newLabel.trim().length > 0) {
-            text.textContent = newLabel.trim();
-          }
+          renameGroup(itemGroup);
+        });
+
+        // Simple click/tap selects the item
+        itemGroup.addEventListener("click", function (e) {
+          selectedItem = itemGroup;
+          e.stopPropagation();
         });
 
         svg.appendChild(itemGroup);
@@ -315,6 +336,16 @@
         addItemBtn.addEventListener("click", function () {
           var label = window.prompt("Label for this item (optional):", "");
           createItem(label);
+        });
+      }
+
+      if (renameItemBtn) {
+        renameItemBtn.addEventListener("click", function () {
+          if (!selectedItem) {
+            alert("Click or tap an item first to select it.");
+            return;
+          }
+          renameGroup(selectedItem);
         });
       }
 
@@ -330,10 +361,41 @@
         });
       }
 
+      // Mouse drag support
       svg.addEventListener("mousedown", startDrag);
       svg.addEventListener("mousemove", drag);
       window.addEventListener("mouseup", endDrag);
 
+      // Touch drag support
+      svg.addEventListener("touchstart", function (evt) {
+        var t = evt.touches[0];
+        if (!t) return;
+        // emulate mousedown-ish behavior
+        var fakeEvt = {
+          target: evt.target,
+          preventDefault: function () { evt.preventDefault(); },
+          clientX: t.clientX,
+          clientY: t.clientY
+        };
+        startDrag(fakeEvt);
+      }, { passive: false });
+
+      svg.addEventListener("touchmove", function (evt) {
+        var t = evt.touches[0];
+        if (!t) return;
+        var fakeEvt = {
+          preventDefault: function () { evt.preventDefault(); },
+          clientX: t.clientX,
+          clientY: t.clientY
+        };
+        drag(fakeEvt);
+      }, { passive: false });
+
+      window.addEventListener("touchend", function () {
+        endDrag();
+      });
+
+      // Delete key support
       window.addEventListener("keydown", function (evt) {
         if (!selectedItem) return;
         if (evt.key === "Delete" || evt.key === "Backspace") {
@@ -348,3 +410,4 @@
   </script>
 </body>
 </html>
+
