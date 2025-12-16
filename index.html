@@ -317,12 +317,7 @@
         var offsetY = (nextItemIndex - 1) * 70;
         setGroupPosition(itemGroup, baseX, baseY + offsetY);
 
-        // Double-click to rename (desktop)
-        itemGroup.addEventListener("dblclick", function () {
-          renameGroup(itemGroup);
-        });
-
-        // Simple click/tap selects the item
+        // Click/tap selects the item
         itemGroup.addEventListener("click", function (e) {
           selectedItem = itemGroup;
           e.stopPropagation();
@@ -370,7 +365,6 @@
       svg.addEventListener("touchstart", function (evt) {
         var t = evt.touches[0];
         if (!t) return;
-        // emulate mousedown-ish behavior
         var fakeEvt = {
           target: evt.target,
           preventDefault: function () { evt.preventDefault(); },
@@ -395,6 +389,14 @@
         endDrag();
       });
 
+      // SVG-level double-click to rename (desktop)
+      svg.addEventListener("dblclick", function (evt) {
+        var g = findDraggableGroup(evt.target);
+        if (!g) return;
+        selectedItem = g;
+        renameGroup(g);
+      });
+
       // Delete key support
       window.addEventListener("keydown", function (evt) {
         if (!selectedItem) return;
@@ -410,4 +412,3 @@
   </script>
 </body>
 </html>
-
